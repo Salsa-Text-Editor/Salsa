@@ -20,6 +20,7 @@ void get_terminal_size(int *width, int *height) {
   *height = w.ws_row;
 }
 
+// creates a display
 Display create_display(int width, int height) {
   int size = width * height;
   Widget *widgets = calloc(1, sizeof(Widget));
@@ -167,7 +168,6 @@ int add_widget(Display *display, Widget widget) {
         !found) {
       found = 1;
       new_widgets[i] = widget;
-      LOG_INFO("Created Widget");
       continue;
     } else {
       new_widgets[i] = display->widgets[index];
