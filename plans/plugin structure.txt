@@ -1,0 +1,6 @@
+salsa . || salsa (dir)
+-> opens file navigator
+
+salsa (file)
+-> opens text editor
+
