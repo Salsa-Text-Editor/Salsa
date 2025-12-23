@@ -1,22 +1,21 @@
 const std = @import("std");
 const os = std.os;
-const linux = os.linux;
+const posix = std.posix;
 const io = std.io;
 const fs = std.fs;
 const mem = std.mem;
 
-var stdout = io.getStdOut().writer();
-var stdin = io.getStdIn().reader();
-
 pub fn main() !void {
+    const stdout = io.getStdOut().writer();
+    // const stdin = io.getStdIn().reader();
+
     const tty_file = try fs.openFileAbsolute("/dev/tty", .{});
     defer tty_file.close();
     const tty_fd = tty_file.handle;
 
-    var old_settings: linux.termios = undefined;
-    _ = linux.tcgetattr(tty_fd, &old_settings);
+    const old_settings = try posix.tcgetattr(tty_fd);
 
-    var new_settings: linux.termios = old_settings;
+    var new_settings = old_settings;
     new_settings.lflag.ICANON = false;
     new_settings.lflag.ECHO = false;
     new_settings.lflag.ISIG = false;
@@ -32,16 +31,15 @@ pub fn main() !void {
 
     new_settings.cflag.CSIZE = .CS8;
 
-    new_settings.cc[@intFromEnum(linux.V.TIME)] = 0;
-    new_settings.cc[@intFromEnum(linux.V.MIN)] = 1;
+    new_settings.cc[@intFromEnum(posix.V.TIME)] = 0;
+    new_settings.cc[@intFromEnum(posix.V.MIN)] = 1;
 
-    _ = linux.tcsetattr(tty_fd, linux.TCSA.FLUSH, &new_settings);
+    try posix.tcsetattr(tty_fd, posix.TCSA.FLUSH, new_settings);
 
-    try stdout.writeAll("\x1B[?25l"); // Hide the cursor.
-    try stdout.writeAll("\x1B[s"); // Save cursor position.
-    try stdout.writeAll("\x1B[?47h"); // Save screen.
-    try stdout.writeAll("\x1B[?1049h"); // Enable alternative buffer.
-
+    try hideCursor(stdout);
+    try saveCursor(stdout);
+    try saveScreen(stdout);
+    try alternateBuffer(stdout);
     try moveCursor(stdout, 0, 0);
 
     while (true) {
@@ -50,44 +48,49 @@ pub fn main() !void {
 
         switch (input_buffer[0]) {
             'q' => {
-                _ = linux.tcsetattr(tty_fd, linux.TCSA.FLUSH, &old_settings);
-                try stdout.writeAll("\x1B[?1049l"); // Disable alternative buffer.
-                try stdout.writeAll("\x1B[?47l"); // Restore screen.
-                try stdout.writeAll("\x1B[u"); // Restore cursor position.
+                try posix.tcsetattr(tty_fd, posix.TCSA.FLUSH, old_settings);
+
+                try originalBuffer(stdout);
+                try restoreScreen(stdout);
+                try restoreCursor(stdout);
                 return;
             },
             '\x1B' => {
-                new_settings.cc[@intFromEnum(linux.V.TIME)] = 1;
-                new_settings.cc[@intFromEnum(linux.V.MIN)] = 0;
-                _ = linux.tcsetattr(tty_fd, linux.TCSA.NOW, &new_settings);
+                new_settings.cc[@intFromEnum(posix.V.TIME)] = 1;
+                new_settings.cc[@intFromEnum(posix.V.MIN)] = 0;
+                try posix.tcsetattr(tty_fd, posix.TCSA.NOW, new_settings);
 
                 var escape_buffer: [8]u8 = undefined;
-                const escape_read = try tty_file.read(&escape_buffer);
+                const buffer_length = try tty_file.read(&escape_buffer);
 
-                new_settings.cc[@intFromEnum(linux.V.TIME)] = 0;
-                new_settings.cc[@intFromEnum(linux.V.MIN)] = 1;
-                _ = linux.tcsetattr(tty_fd, linux.TCSA.NOW, &new_settings);
+                new_settings.cc[@intFromEnum(posix.V.TIME)] = 0;
+                new_settings.cc[@intFromEnum(posix.V.MIN)] = 1;
+                try posix.tcsetattr(tty_fd, posix.TCSA.NOW, new_settings);
 
-                if (escape_read == 0) {
-                    try stdout.print("typed: (escape)\r\n", .{});
-                } else if (mem.eql(u8, escape_buffer[0..escape_read], "[A")) {
-                    try stdout.print("typed: (up arrow)\r\n", .{});
-                } else if (mem.eql(u8, escape_buffer[0..escape_read], "[B")) {
-                    try stdout.print("typed: (down arrow)\r\n", .{});
-                } else if (mem.eql(u8, escape_buffer[0..escape_read], "[C")) {
-                    try stdout.print("typed: (right arrow)\r\n", .{});
-                } else if (mem.eql(u8, escape_buffer[0..escape_read], "[D")) {
-                    try stdout.print("typed: (left arrow)\r\n", .{});
-                } else if (mem.eql(u8, escape_buffer[0..escape_read], "a")) {
-                    try stdout.print("typed: (alt-a)\r\n", .{});
-                } else {
-                    try stdout.print("typed: (unkown escape sequence)\r\n", .{});
-                }
+                try handleEscapeSequences(stdout, buffer_length, escape_buffer);
             },
             else => {
                 try stdout.print("typed: ({c})\r\n", .{input_buffer[0]});
             },
         }
+    }
+}
+
+fn handleEscapeSequences(writer: anytype, buffer_length: usize, escape_buffer: [8]u8) !void {
+    if (buffer_length == 0) {
+        try writer.print("typed: (escape)\r\n", .{});
+    } else if (mem.eql(u8, escape_buffer[0..buffer_length], "[A")) {
+        try writer.print("typed: (up arrow)\r\n", .{});
+    } else if (mem.eql(u8, escape_buffer[0..buffer_length], "[B")) {
+        try writer.print("typed: (down arrow)\r\n", .{});
+    } else if (mem.eql(u8, escape_buffer[0..buffer_length], "[C")) {
+        try writer.print("typed: (right arrow)\r\n", .{});
+    } else if (mem.eql(u8, escape_buffer[0..buffer_length], "[D")) {
+        try writer.print("typed: (left arrow)\r\n", .{});
+    } else if (mem.eql(u8, escape_buffer[0..buffer_length], "a")) {
+        try writer.print("typed: (alt-a)\r\n", .{});
+    } else {
+        try writer.print("typed: (unkown escape sequence)\r\n", .{});
     }
 }
 
