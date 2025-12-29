@@ -1,21 +1,53 @@
 const std = @import("std");
+const builtin = @import("builtin");
 const os = std.os;
 const posix = std.posix;
 const io = std.io;
 const fs = std.fs;
 const mem = std.mem;
 
+const InputState = enum { Normal, Escape, CSI };
+
 pub fn main() !void {
     const stdout = io.getStdOut().writer();
-    // const stdin = io.getStdIn().reader();
+    const stdin = io.getStdIn().reader();
 
-    const tty_file = try fs.openFileAbsolute("/dev/tty", .{});
+    var input_state: InputState = .Normal;
+
+    const tty_file: fs.File = try fs.openFileAbsolute("/dev/tty", .{});
     defer tty_file.close();
-    const tty_fd = tty_file.handle;
+    const tty_fd: posix.system.fd_t = tty_file.handle;
 
-    const old_settings = try posix.tcgetattr(tty_fd);
+    const old_settings: posix.termios = try configureTerminal(tty_fd);
 
-    var new_settings = old_settings;
+    try initSalsa(stdout);
+
+    while (true) {
+        const input_char: u8 = stdin.readByte() catch |err| blk: {
+            if (err == error.EndOfStream) {
+                break :blk '\x00';
+            }
+            try deinitSalsa(stdout, tty_fd, old_settings);
+            return err;
+        };
+
+        switch (input_state) {
+            .Normal => {
+                try handleNormalInputState(stdout, &input_state, input_char);
+            },
+            .Escape => try handleEscapeInputState(stdout, &input_state, input_char),
+            .CSI => try handleCSIInputState(stdout, &input_state, input_char),
+        }
+        if (input_char == 'q') {
+            try deinitSalsa(stdout, tty_fd, old_settings);
+            return;
+        }
+    }
+}
+
+fn configureTerminal(tty_fd: posix.system.fd_t) !posix.termios {
+    const old_settings: posix.termios = try posix.tcgetattr(tty_fd);
+    var new_settings: posix.termios = old_settings;
     new_settings.lflag.ICANON = false;
     new_settings.lflag.ECHO = false;
     new_settings.lflag.ISIG = false;
@@ -32,67 +64,80 @@ pub fn main() !void {
     new_settings.cflag.CSIZE = .CS8;
 
     new_settings.cc[@intFromEnum(posix.V.TIME)] = 0;
-    new_settings.cc[@intFromEnum(posix.V.MIN)] = 1;
+    new_settings.cc[@intFromEnum(posix.V.MIN)] = 0;
 
     try posix.tcsetattr(tty_fd, posix.TCSA.FLUSH, new_settings);
+    return old_settings;
+}
+fn initSalsa(writer: anytype) !void {
+    try hideCursor(writer);
+    try saveCursor(writer);
+    try saveScreen(writer);
+    try alternateBuffer(writer);
+    try moveCursor(writer, 0, 0);
+}
 
-    try hideCursor(stdout);
-    try saveCursor(stdout);
-    try saveScreen(stdout);
-    try alternateBuffer(stdout);
-    try moveCursor(stdout, 0, 0);
+fn resetTerminal(tty_fd: posix.system.fd_t, old_settings: posix.termios) !void {
+    try posix.tcsetattr(tty_fd, posix.TCSA.FLUSH, old_settings);
+}
 
-    while (true) {
-        var input_buffer: [1]u8 = undefined;
-        _ = try tty_file.read(&input_buffer);
+fn deinitSalsa(writer: anytype, tty_fd: posix.system.fd_t, old_settings: posix.termios) !void {
+    try resetTerminal(tty_fd, old_settings);
+    try originalBuffer(writer);
+    try restoreScreen(writer);
+    try restoreCursor(writer);
+}
 
-        switch (input_buffer[0]) {
-            'q' => {
-                try posix.tcsetattr(tty_fd, posix.TCSA.FLUSH, old_settings);
-
-                try originalBuffer(stdout);
-                try restoreScreen(stdout);
-                try restoreCursor(stdout);
-                return;
-            },
-            '\x1B' => {
-                new_settings.cc[@intFromEnum(posix.V.TIME)] = 1;
-                new_settings.cc[@intFromEnum(posix.V.MIN)] = 0;
-                try posix.tcsetattr(tty_fd, posix.TCSA.NOW, new_settings);
-
-                var escape_buffer: [8]u8 = undefined;
-                const buffer_length = try tty_file.read(&escape_buffer);
-
-                new_settings.cc[@intFromEnum(posix.V.TIME)] = 0;
-                new_settings.cc[@intFromEnum(posix.V.MIN)] = 1;
-                try posix.tcsetattr(tty_fd, posix.TCSA.NOW, new_settings);
-
-                try handleEscapeSequences(stdout, buffer_length, escape_buffer);
-            },
-            else => {
-                try stdout.print("typed: ({c})\r\n", .{input_buffer[0]});
-            },
-        }
+fn handleNormalInputState(writer: anytype, input_state: *InputState, input_char: u8) !void {
+    switch (input_char) {
+        '\x1B' => input_state.* = .Escape,
+        '\x00' => {},
+        else => try writer.print("typed: ({c})\r\n", .{input_char}),
     }
 }
 
-fn handleEscapeSequences(writer: anytype, buffer_length: usize, escape_buffer: [8]u8) !void {
-    if (buffer_length == 0) {
-        try writer.print("typed: (escape)\r\n", .{});
-    } else if (mem.eql(u8, escape_buffer[0..buffer_length], "[A")) {
-        try writer.print("typed: (up arrow)\r\n", .{});
-    } else if (mem.eql(u8, escape_buffer[0..buffer_length], "[B")) {
-        try writer.print("typed: (down arrow)\r\n", .{});
-    } else if (mem.eql(u8, escape_buffer[0..buffer_length], "[C")) {
-        try writer.print("typed: (right arrow)\r\n", .{});
-    } else if (mem.eql(u8, escape_buffer[0..buffer_length], "[D")) {
-        try writer.print("typed: (left arrow)\r\n", .{});
-    } else if (mem.eql(u8, escape_buffer[0..buffer_length], "a")) {
-        try writer.print("typed: (alt-a)\r\n", .{});
-    } else {
-        try writer.print("typed: (unkown escape sequence)\r\n", .{});
+fn handleEscapeInputState(writer: anytype, input_state: *InputState, input_char: u8) !void {
+    switch (input_char) {
+        '[' => input_state.* = .CSI,
+        '\x00' => {
+            try writer.writeAll("typed: (escape)\r\n");
+            input_state.* = .Normal;
+        },
+        else => {
+            try writer.writeAll("unkown escape sequence\r\n");
+            input_state.* = .Normal;
+        },
     }
 }
+
+fn handleCSIInputState(writer: anytype, input_state: *InputState, input_char: u8) !void {
+    switch (input_char) {
+        'A' => try writer.writeAll("up arrow\r\n"),
+        'B' => try writer.writeAll("down arrow\r\n"),
+        'C' => try writer.writeAll("right arrow\r\n"),
+        'D' => try writer.writeAll("left arrow\r\n"),
+        else => try writer.writeAll("unkown csi character\r\n"),
+    }
+    input_state.* = .Normal;
+}
+
+// fn handleEscapeSequences(writer: anytype, buffer_length: usize, escape_buffer: [8]u8) !void {
+//     if (buffer_length == 0) {
+//         try writer.print("typed: (escape)\r\n", .{});
+//     } else if (mem.eql(u8, escape_buffer[0..buffer_length], "[A")) {
+//         try writer.print("typed: (up arrow)\r\n", .{});
+//     } else if (mem.eql(u8, escape_buffer[0..buffer_length], "[B")) {
+//         try writer.print("typed: (down arrow)\r\n", .{});
+//     } else if (mem.eql(u8, escape_buffer[0..buffer_length], "[C")) {
+//         try writer.print("typed: (right arrow)\r\n", .{});
+//     } else if (mem.eql(u8, escape_buffer[0..buffer_length], "[D")) {
+//         try writer.print("typed: (left arrow)\r\n", .{});
+//     } else if (mem.eql(u8, escape_buffer[0..buffer_length], "a")) {
+//         try writer.print("typed: (alt-a)\r\n", .{});
+//     } else {
+//         try writer.print("typed: (unkown escape sequence)\r\n", .{});
+//     }
+// }
 
 fn moveCursor(writer: anytype, row: usize, col: usize) !void {
     try writer.print("\x1B[{};{}H", .{ row + 1, col + 1 });
