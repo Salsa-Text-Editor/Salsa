@@ -116,9 +116,12 @@ fn handleCSIInputState(writer: anytype, input_state: *InputState, input_char: u8
         'B' => try writer.writeAll("down arrow\r\n"),
         'C' => try writer.writeAll("right arrow\r\n"),
         'D' => try writer.writeAll("left arrow\r\n"),
-        else => try writer.writeAll("unkown csi character\r\n"),
+        '\x00' => input_state.* = .Normal,
+        else => {
+            try writer.writeAll("unkown csi character\r\n");
+            input_state.* = .Normal;
+        },
     }
-    input_state.* = .Normal;
 }
 
 // fn handleEscapeSequences(writer: anytype, buffer_length: usize, escape_buffer: [8]u8) !void {
