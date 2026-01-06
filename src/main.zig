@@ -1,6 +1,4 @@
 const std = @import("std");
-const builtin = @import("builtin");
-const os = std.os;
 const posix = std.posix;
 const io = std.io;
 const fs = std.fs;
@@ -14,7 +12,15 @@ const core_input = @import("core/input.zig");
 pub fn main() !void {
     const stdout = io.getStdOut().writer();
     const stdin = io.getStdIn().reader();
-    const allocator: mem.Allocator = heap.page_allocator;
+    var gpa = heap.GeneralPurposeAllocator(.{}){};
+    const allocator = gpa.allocator();
+
+    defer {
+        const status = gpa.deinit();
+        if (status == .leak) {
+            @panic("memory leak detected!!!");
+        }
+    }
 
     const tty_file: fs.File = try fs.openFileAbsolute("/dev/tty", .{});
     defer tty_file.close();
@@ -26,7 +32,8 @@ pub fn main() !void {
 
     while (true) {
         const input = try core_input.pollEvents(stdin, allocator);
-        if (!mem.eql(u8, input, "\x00")) {
+        defer allocator.free(input);
+        if (input.len > 0) {
             try stdout.print("pressed key ({s})\r\n", .{input});
         }
         if (mem.eql(u8, input, "q")) {

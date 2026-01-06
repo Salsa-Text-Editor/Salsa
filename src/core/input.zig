@@ -12,10 +12,9 @@ fn getNextChar(reader: anytype) !u8 {
 }
 
 pub fn pollEvents(reader: anytype, allocator: mem.Allocator) ![]u8 {
-
-    // organize this in a way where it returns null
     var list: std.ArrayList(u8) = .init(allocator);
-    defer list.deinit();
+    errdefer list.deinit();
+
     var ch: u8 = try getNextChar(reader);
 
     while (ch != '\x00') {
@@ -23,5 +22,5 @@ pub fn pollEvents(reader: anytype, allocator: mem.Allocator) ![]u8 {
         ch = try getNextChar(reader);
     }
 
-    return list.items;
+    return list.toOwnedSlice();
 }
