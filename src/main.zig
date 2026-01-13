@@ -22,6 +22,9 @@ pub fn main() !void {
         }
     }
 
+    // work on display manager
+    // work on plugin manager
+
     const tty_file: fs.File = try fs.openFileAbsolute("/dev/tty", .{});
     defer tty_file.close();
     const tty_fd: posix.system.fd_t = tty_file.handle;

@@ -1,3 +1,6 @@
+const std = @import("std");
+const fs = std.fs;
+
 const Buffer = struct {
     var currentLine: u32 = 0;
     var currentChar: u32 = 0;
@@ -18,3 +21,10 @@ const Buffer = struct {
 const Line = struct {
     var chars = []u8;
 };
+
+pub fn renderBuffer(writer: fs.File.Writer, buffer: Buffer) !void {
+    for (try buffer.getCurrentLine(), 0..) |line, index| {
+        try writer.writeAll(index);
+        try writer.writeAll(line);
+    }
+}
