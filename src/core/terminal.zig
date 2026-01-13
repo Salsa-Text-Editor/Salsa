@@ -1,5 +1,6 @@
 const std = @import("std");
 const posix = std.posix;
+const fs = std.fs;
 
 pub fn setupTerminal(tty_fd: posix.system.fd_t) !posix.termios {
     const old_settings: posix.termios = try posix.tcgetattr(tty_fd);
@@ -30,34 +31,38 @@ pub fn resetTerminal(tty_fd: posix.system.fd_t, old_settings: posix.termios) !vo
     try posix.tcsetattr(tty_fd, posix.TCSA.FLUSH, old_settings);
 }
 
-pub fn moveCursor(writer: anytype, row: usize, col: usize) !void {
+pub fn moveCursor(writer: fs.File.Writer, row: usize, col: usize) !void {
     try writer.print("\x1B[{};{}H", .{ row, col });
 }
 
-pub fn hideCursor(writer: anytype) !void {
+pub fn hideCursor(writer: fs.File.Writer) !void {
     try writer.writeAll("\x1B[?25l");
 }
 
-pub fn restoreCursor(writer: anytype) !void {
+pub fn restoreCursor(writer: fs.File.Writer) !void {
     try writer.writeAll("\x1B[u");
 }
 
-pub fn saveCursor(writer: anytype) !void {
+pub fn saveCursor(writer: fs.File.Writer) !void {
     try writer.writeAll("\x1B[s");
 }
 
-pub fn alternateBuffer(writer: anytype) !void {
+pub fn alternateBuffer(writer: fs.File.Writer) !void {
     try writer.writeAll("\x1B[?1049h");
 }
 
-pub fn originalBuffer(writer: anytype) !void {
+pub fn originalBuffer(writer: fs.File.Writer) !void {
     try writer.writeAll("\x1B[?1049l");
 }
 
-pub fn restoreScreen(writer: anytype) !void {
+pub fn restoreScreen(writer: fs.File.Writer) !void {
     try writer.writeAll("\x1B[?47l");
 }
 
-pub fn saveScreen(writer: anytype) !void {
+pub fn saveScreen(writer: fs.File.Writer) !void {
     try writer.writeAll("\x1B[?47h");
+}
+
+pub fn clearBuffer(writer: fs.File.Writer) !void {
+    try writer.writeAll("\x1B[3J");
 }

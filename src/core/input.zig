@@ -1,8 +1,9 @@
 const std = @import("std");
 const io = std.io;
 const mem = std.mem;
+const fs = std.fs;
 
-fn getNextChar(reader: anytype) !u8 {
+fn getNextChar(reader: fs.File.Reader) !u8 {
     return reader.readByte() catch |err| blk: {
         if (err == error.EndOfStream) {
             break :blk '\x00';
@@ -11,7 +12,7 @@ fn getNextChar(reader: anytype) !u8 {
     };
 }
 
-pub fn pollEvents(reader: anytype, allocator: mem.Allocator) ![]u8 {
+pub fn pollEvents(reader: fs.File.Reader, allocator: mem.Allocator) ![]u8 {
     var list: std.ArrayList(u8) = .init(allocator);
     errdefer list.deinit();
 

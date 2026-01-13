@@ -1,12 +1,15 @@
 const std = @import("std");
 const posix = std.posix;
+const fs = std.fs;
+
 const core_terminal = @import("terminal.zig");
 
-pub fn initSalsa(writer: anytype) !void {
+pub fn initSalsa(writer: fs.File.Writer) !void {
     try core_terminal.hideCursor(writer);
     try core_terminal.saveCursor(writer);
     try core_terminal.saveScreen(writer);
     try core_terminal.alternateBuffer(writer);
+    try core_terminal.clearBuffer(writer);
     try core_terminal.moveCursor(writer, 0, 0);
 }
 
