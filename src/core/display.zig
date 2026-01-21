@@ -3,9 +3,14 @@ const fs = std.fs;
 const mem = std.mem;
 
 const Buffer = struct {
-    var lines: []Line = undefined;
+    lines: []Line = undefined,
+    allocator: mem.Allocator = undefined,
 
-    pub fn init(allocator: mem.Allocator, rows: u16, columns: u16) !void {}
+    pub fn init(allocator: mem.Allocator, rows: u16, columns: u16) !Buffer {
+        return Buffer{ .allocator = allocator, .lines = allocator.alloc(u8, rows) };
+    }
+
+    pub fn deinit() void {}
 };
 
 const Line = struct {
