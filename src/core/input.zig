@@ -3,6 +3,18 @@ const io = std.io;
 const mem = std.mem;
 const fs = std.fs;
 
+pub const Reader = struct {
+    allocator: mem.Allocator,
+    reader: fs.File.Reader,
+
+    const Self = @This();
+
+    pub fn init(allocator: mem.Allocator, reader: fs.File.Reader) !Self {
+        _ = allocator;
+        _ = reader;
+    }
+};
+
 fn getNextChar(reader: fs.File.Reader) !u8 {
     return reader.readByte() catch |err| blk: {
         if (err == error.EndOfStream) {

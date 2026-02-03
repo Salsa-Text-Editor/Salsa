@@ -12,10 +12,10 @@ pub const Buffer = struct {
 
     const Self = @This();
 
-    pub fn init(allocator: mem.Allocator, rows: usize, columns: usize) !Self {
+    pub fn init(allocator: mem.Allocator, rows: usize, columns: usize, init_char: u8) !Self {
         const lines = try allocator.alloc(Line, rows);
         for (lines) |*line| {
-            line.* = try Line.init(allocator, columns);
+            line.* = try Line.init(allocator, columns, init_char);
         }
         return Buffer{ .allocator = allocator, .lines = lines, .rows = rows, .columns = columns };
     }
@@ -27,12 +27,26 @@ pub const Buffer = struct {
         self.allocator.free(self.lines);
     }
 
-    pub fn setChar(self: Self, row: usize, column: usize, char: u8) void {
-        self.lines[row - 1].chars[column] = char;
+    pub fn setChar(self: Self, row: usize, column: usize, char: u8) !void {
+        if (row > self.getRows()) {
+            return error.OutOfBounds;
+        }
+        try self.lines[row - 1].setChar(column, char);
     }
 
-    pub fn getChar(self: Self, row: usize, column: usize) u8 {
-        return self.lines[row - 1].chars[column];
+    pub fn getChar(self: Self, row: usize, column: usize) !u8 {
+        if (row > self.getRows()) {
+            return error.OutOfBounds;
+        }
+        return try self.lines[row - 1].getChar(column);
+    }
+
+    pub fn getRows(self: Self) usize {
+        return self.rows;
+    }
+
+    pub fn getColumns(self: Self) usize {
+        return self.columns;
     }
 };
 
@@ -43,8 +57,9 @@ const Line = struct {
 
     const Self = @This();
 
-    pub fn init(allocator: mem.Allocator, length: usize) !Self {
+    pub fn init(allocator: mem.Allocator, length: usize, init_char: u8) !Self {
         const line: []u8 = try allocator.alloc(u8, length);
+        @memset(line, init_char);
         return Self{ .chars = line, .allocator = allocator, .length = length };
     }
 
@@ -52,11 +67,17 @@ const Line = struct {
         self.allocator.free(self.chars);
     }
 
-    pub fn setChar(self: Self, position: usize, char: u8) void {
+    pub fn setChar(self: Self, position: usize, char: u8) !void {
+        if (position > self.getLength()) {
+            return error.OutOfBounds;
+        }
         self.chars[position - 1] = char;
     }
 
-    pub fn getChar(self: Self, position: usize) u8 {
+    pub fn getChar(self: Self, position: usize) !u8 {
+        if (position > self.getLength()) {
+            return error.OutOfBounds;
+        }
         return self.chars[position - 1];
     }
 
@@ -66,12 +87,14 @@ const Line = struct {
 };
 
 pub fn renderBuffer(writer: fs.File.Writer, buffer: Buffer) !void {
+    try core_terminal.clearBuffer(writer);
+    try core_terminal.moveCursor(writer, 1, 1);
     for (buffer.lines, 0..) |line, iterator| {
         _ = iterator;
         for (line.chars) |char| {
-            try core_terminal.clearBuffer(writer);
-            try core_terminal.moveCursor(writer, 1, 1);
             try writer.writeByte(char);
         }
+        // print \r
+        try writer.writeAll("\r\n");
     }
 }
