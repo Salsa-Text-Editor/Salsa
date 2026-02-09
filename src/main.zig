@@ -41,7 +41,9 @@ pub fn main() !void {
     var input_reader = try cinput.Reader.init(allocator, stdin);
     defer input_reader.deinit();
 
-    const Mode = enum {};
+    const Mode = enum { Normal, Insert };
+
+    var mode: Mode = .Normal;
 
     while (true) {
         const input = try input_reader.pollInput();
@@ -50,6 +52,9 @@ pub fn main() !void {
         if (input.len > 0) {
             try main_buffer.setChar(1, 1, input[0]);
             try cdisplay.renderBuffer(stdout, main_buffer);
+        }
+        if (mem.startsWith(u8, input, "i")) {
+            mode = .Insert;
         }
         if (mem.startsWith(u8, input, "q")) {
             try csalsa.deinitSalsa(stdout, tty_fd, old_settings);
