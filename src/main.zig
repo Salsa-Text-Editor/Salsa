@@ -34,26 +34,22 @@ pub fn main() !void {
 
     try csalsa.initSalsa(stdout);
 
-    var win_size = posix.winsize{
-        .row = 0,
-        .col = 0,
-        .xpixel = 0,
-        .ypixel = 0,
-    };
+    var terminal = try cterminal.TerminalWindow.init(tty_fd);
 
-    const err = posix.system.ioctl(tty_fd, posix.T.IOCGWINSZ, @intFromPtr(&win_size));
-    if (posix.errno(err) == .SUCCESS) {}
-
-    var main_buffer = try cdisplay.Buffer.init(allocator, win_size.row - 1, win_size.col, 'e');
+    var main_buffer = try cdisplay.Buffer.init(allocator, terminal.rows - 1, terminal.columns, 'e');
     defer main_buffer.deinit();
+    var input_reader = try cinput.Reader.init(allocator, stdin);
+    defer input_reader.deinit();
+
     while (true) {
-        const input = try cinput.pollEvents(stdin, allocator);
-        defer allocator.free(input);
+        const input = try input_reader.pollInput();
+        try terminal.update();
+        try main_buffer.resize(terminal.rows, terminal.columns);
         if (input.len > 0) {
             try main_buffer.setChar(1, 1, input[0]);
             try cdisplay.renderBuffer(stdout, main_buffer);
         }
-        if (mem.eql(u8, input, "q")) {
+        if (mem.startsWith(u8, input, "q")) {
             try csalsa.deinitSalsa(stdout, tty_fd, old_settings);
             return;
         }

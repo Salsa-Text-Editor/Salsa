@@ -6,34 +6,38 @@ const fs = std.fs;
 pub const Reader = struct {
     allocator: mem.Allocator,
     reader: fs.File.Reader,
+    input: std.ArrayList(u8),
 
     const Self = @This();
 
     pub fn init(allocator: mem.Allocator, reader: fs.File.Reader) !Self {
-        _ = allocator;
-        _ = reader;
+        const input = std.ArrayList(u8).init(allocator);
+        return Self{ .allocator = allocator, .reader = reader, .input = input };
+    }
+
+    pub fn deinit(self: Self) void {
+        self.input.deinit();
+    }
+
+    fn getNextChar(self: Self) !u8 {
+        return self.reader.readByte() catch |err| blk: {
+            if (err == error.EndOfStream) {
+                break :blk '\x00';
+            }
+            return err;
+        };
+    }
+
+    pub fn pollInput(self: *Self) ![]u8 {
+        var ch: u8 = try self.getNextChar();
+
+        var counter: u8 = 0;
+        while (ch != '\x00') {
+            try self.*.input.insert(counter, ch);
+            ch = try self.getNextChar();
+            counter += 1;
+        }
+
+        return self.input.items;
     }
 };
-
-fn getNextChar(reader: fs.File.Reader) !u8 {
-    return reader.readByte() catch |err| blk: {
-        if (err == error.EndOfStream) {
-            break :blk '\x00';
-        }
-        return err;
-    };
-}
-
-pub fn pollEvents(reader: fs.File.Reader, allocator: mem.Allocator) ![]u8 {
-    var list: std.ArrayList(u8) = .init(allocator);
-    errdefer list.deinit();
-
-    var ch: u8 = try getNextChar(reader);
-
-    while (ch != '\x00') {
-        try list.append(ch);
-        ch = try getNextChar(reader);
-    }
-
-    return list.toOwnedSlice();
-}
