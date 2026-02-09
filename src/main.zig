@@ -23,7 +23,7 @@ pub fn main() !void {
         }
     }
 
-    // work on display manager
+    // work on display manager (multiple buffers)
     // work on plugin manager
 
     const tty_file: fs.File = try fs.openFileAbsolute("/dev/tty", .{});
@@ -36,10 +36,12 @@ pub fn main() !void {
 
     var terminal = try cterminal.TerminalWindow.init(tty_fd);
 
-    var main_buffer = try cdisplay.Buffer.init(allocator, terminal.rows - 1, terminal.columns, 'e');
+    var main_buffer = try cdisplay.Buffer.init(allocator, terminal.rows, terminal.columns, 'e');
     defer main_buffer.deinit();
     var input_reader = try cinput.Reader.init(allocator, stdin);
     defer input_reader.deinit();
+
+    const Mode = enum {};
 
     while (true) {
         const input = try input_reader.pollInput();

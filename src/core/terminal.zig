@@ -27,14 +27,14 @@ pub const TerminalWindow = struct {
 
     pub fn init(tty_fd: posix.system.fd_t) !Self {
         const winsize = try getWinSize(tty_fd);
-        return Self{ .columns = winsize.col, .rows = winsize.row, .tty_fd = tty_fd };
+        return Self{ .columns = winsize.col, .rows = winsize.row - 1, .tty_fd = tty_fd };
     }
 
     pub fn update(self: *Self) !void {
         const winsize = try getWinSize(self.tty_fd);
         if (winsize.col != self.columns or winsize.row != self.rows) {
             self.*.columns = winsize.col;
-            self.*.rows = winsize.row;
+            self.*.rows = winsize.row - 1;
         }
     }
 };

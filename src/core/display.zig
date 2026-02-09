@@ -18,16 +18,30 @@ pub const Buffer = struct {
         for (lines) |*line| {
             line.* = try Line.init(allocator, columns, init_char);
         }
-        return Self{ .allocator = allocator, .lines = lines, .rows = rows, .columns = columns };
+        return Self{ .allocator = allocator, .lines = lines, .rows = rows, .columns = columns, .init_char = init_char };
     }
 
     pub fn resize(self: *Self, rows: u16, columns: u16) !void {
-        self.columns = columns;
-        self.rows = rows;
+        if (rows < self.rows) {
+            for (self.lines[rows..self.rows]) |*line| {
+                line.deinit();
+            }
+        }
+
         self.*.lines = try self.allocator.realloc(self.lines, rows);
-        for (self.lines) |*line| {
+
+        for (self.lines[0..@min(self.rows, rows)]) |*line| {
             try line.*.resize(columns);
         }
+
+        if (rows > self.rows) {
+            for (self.lines[self.rows..rows]) |*line| {
+                line.* = try Line.init(self.allocator, self.columns, self.init_char);
+            }
+        }
+
+        self.columns = columns;
+        self.rows = rows;
     }
 
     pub fn deinit(self: Self) void {
@@ -74,9 +88,11 @@ const Line = struct {
     }
 
     pub fn resize(self: *Self, length: u16) !void {
-        self.length = length;
         self.*.chars = try self.allocator.realloc(self.chars, length);
-        @memset(self.*.chars, 'E');
+        if (length > self.length) {
+            @memset(self.chars[self.length..length], 'E');
+        }
+        self.*.length = length;
     }
 
     pub fn deinit(self: Self) void {
